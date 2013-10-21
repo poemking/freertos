@@ -53,7 +53,8 @@ main.bin: test-romfs.o main.c
 		osdebug.c \
 		string-util.c \
 		\
-		main.c
+		main.c \
+	
 	$(CROSS_COMPILE)ld -Tmain.ld -nostartfiles -o main.elf \
 		core_cm3.o \
 		system_stm32f10x.o \
@@ -74,7 +75,8 @@ main.bin: test-romfs.o main.c
 		osdebug.o \
 		string-util.o \
 		\
-		main.o
+		main.o \
+	
 	$(CROSS_COMPILE)objcopy -Obinary main.elf main.bin
 	$(CROSS_COMPILE)objdump -S main.elf > main.list
 
@@ -92,15 +94,15 @@ test-romfs.o: mkromfs
 
 
 qemu: main.bin $(QEMU_STM32)
-	$(QEMU_STM32) -M stm32-p103 -kernel main.bin
+	$(QEMU_STM32) -M stm32-p103 -kernel main.bin 
 
 qemudbg: main.bin $(QEMU_STM32)
 	$(QEMU_STM32) -M stm32-p103 \
 		-gdb tcp::3333 -S \
-		-kernel main.bin
+		-kernel main.bin 
 		
 qemuauto: main.bin $(QEMU_STM32)
-	bash emulate.sh main.bin
+	bash emulate.sh main.bin 
 
 clean:
 	rm -f *.o *.elf *.bin *.list mkromfs

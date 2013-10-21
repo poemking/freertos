@@ -1,6 +1,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
+#include <stdarg.h>
+
+/* Scheduler includes. */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "semphr.h"
 
 #define ALIGN (sizeof(size_t))
 #define ONES ((size_t)-1/UCHAR_MAX)                                                                      
@@ -67,3 +74,65 @@ char *strncpy(char *dest, const char *src, size_t n)
 	while (n-- && (*d++ = *s++));
 	return dest;
 }
+
+size_t strlen(const char *s)
+{
+        const char *a = s;
+        const size_t *w;
+        for (; (uintptr_t) s % ALIGN; s++)
+                if (!*s) return (s - a);
+	for (w = (const void *) s; !HASZERO(*w); w++);
+	for (s = (const void *) w; *s; s++);	
+	return (s - a);
+}
+
+int strncmp(const char *s1, const char *s2, size_t n)
+{
+    for ( ; n > 0; s1++, s2++, --n)
+	if (*s1 != *s2)
+	    return ((*(unsigned char *)s1 < *(unsigned char *)s2) ? -1 : +1);
+	else if (*s1 == '\0')
+	    return 0;
+    return 0;
+}
+
+char * strcat ( char * destination, const char * source )
+{
+    int dLength = strlen(destination);
+    int sLength = strlen(source);
+    int i;
+    for (i = 0; i<sLength; i++)
+    {
+        destination[i+dLength]=source[i];
+    }
+    destination[dLength+sLength]='\0';
+    return destination;
+}
+
+/*Ref andy79923*/
+/*Support the sprintf*/
+char* itoa(int value, char* str)
+{
+    int base = 10;
+    int divideNum = base;
+    int i=0;
+    while(value/divideNum > 0)
+    {
+        divideNum*=base;
+    }
+    if(value < 0)
+    {
+        str[0] = '-';
+        i++;
+    }
+    while(divideNum/base > 0)
+    {
+        divideNum/=base;
+        str[i++]=value/divideNum+48;
+        value%=divideNum;
+    }
+    str[i]='\0';
+    return str;
+
+}
+

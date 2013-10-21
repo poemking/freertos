@@ -12,19 +12,20 @@
 #include "filesystem.h"
 #include "fio.h"
 
+#define MAX_SERIAL_STR 100
 extern const char _sromfs;
 
 static void setup_hardware();
 
 volatile xSemaphoreHandle serial_tx_wait_sem = NULL;
-
+volatile xQueueHandle serial_rx_queue = NULL;
 
 /* IRQ handler to handle USART2 interruptss (both transmit and receive
  * interrupts). */
 void USART2_IRQHandler()
 {
 	static signed portBASE_TYPE xHigherPriorityTaskWoken;
-
+	char rx_msg;
 	/* If this interrupt is for a transmit... */
 	if (USART_GetITStatus(USART2, USART_IT_TXE) != RESET) {
 		/* "give" the serial_tx_wait_sem semaphore to notfiy processes
@@ -36,6 +37,18 @@ void USART2_IRQHandler()
 		USART_ITConfig(USART2, USART_IT_TXE, DISABLE);
 		/* If this interrupt is for a receive... */
 	}
+        else if (USART_GetITStatus(USART2, USART_IT_RXNE) != RESET) {
+                /* Receive the byte from the buffer. */
+                rx_msg = USART_ReceiveData(USART2);
+
+                /* Queue the received byte. */
+                if(!xQueueSendToBackFromISR(serial_rx_queue, &rx_msg, &xHigherPriorityTaskWoken)) {
+                        /* If there was an error queueing the received byte,
+                         * freeze. */
+                        while(1);
+                }
+        }
+
 	else {
 		/* Only transmit and receive interrupts should be enabled.
 		 * If this is another type of interrupt, freeze.
@@ -63,21 +76,117 @@ void send_byte(char ch)
 	USART_ITConfig(USART2, USART_IT_TXE, ENABLE);
 }
 
-void read_romfs_task(void *pvParameters)
+char receive_byte()
 {
-	char buf[128];
-	size_t count;
-	int fd = fs_open("/romfs/test.txt", 0, O_RDONLY);
-	do {
-		//Read from /romfs/test.txt to buffer
-		count = fio_read(fd, buf, sizeof(buf));
-		
-		//Write buffer to fd 1 (stdout, through uart)
-		fio_write(1, buf, count);
-	} while (count);
-	
-	while (1);
+	char msg;
+
+	/* Wait for a byte to be queued by the receive interrupts handler. */
+	while (!xQueueReceive(serial_rx_queue, &msg, portMAX_DELAY));
+	return msg;
 }
+
+
+void Shell_Command(char *str)
+{		
+	char tmp[20];
+	char i;
+	if(!strncmp(str,"hello", 5)) {           
+		Print("freertos is difficult!");
+	}
+	else if(!strncmp(str,"echo", 4)){
+		if(strlen(str)==4){
+			Print_nextLine();
+		}
+		if(str[4]==' '){
+			for(i=5;i<strlen(str);i++){
+				tmp[i-5]=str[i];
+			}
+			Print(tmp);
+		}
+	}
+	else if(!strncmp(str,"ps",2)){
+		char title[]="Name\t\t\b\bState\t\b\b\bPriority\t\bStack\t\bNum";
+		Puts(title);
+		char catch[50];
+		vTaskList(catch);
+		Print(catch);
+	}
+	else if(!strncmp(str,"help", 4)) {           
+		Print("You can use 4 command in the freeRTOS");	
+		Print("hello -- display the string");
+                Print("echo -- copy your input");
+                Print("ps -- open your workmanager");
+                Print("help -- display the list");
+	}
+	else{
+		Print("Command not found, please input 'help'");
+	}
+}
+void Shell()
+{
+	char str[MAX_SERIAL_STR];
+	char ch;
+	char pos[] = "poemking's shell~$ ";
+	char newLine[] = "\n\r";
+	int curr_char, done;
+	while (1)
+    {
+        fio_write(1, pos, strlen(pos));
+		curr_char = 0;
+		done = 0;
+		str[curr_char] = '\0';
+		do
+        {
+			/* Receive a byte from the RS232 port (this call will
+			 * block). */
+            ch=receive_byte();
+
+			if (curr_char >= MAX_SERIAL_STR-1 || (ch == '\r') || (ch == '\n'))
+            {
+				str[curr_char] = '\0';
+				done = -1;
+				/* Otherwise, add the character to the
+				 * response string. */
+			}
+			else if(ch == 127)//press the backspace key
+            {
+                if(curr_char!=0)
+                {
+                    curr_char--;
+                    fio_write(1,"\b \b", 3);
+                }
+            }
+            else if(ch == 27)//press up, down, left, right, home, page up, delete, end, page down
+            {
+                ch=receive_byte();
+                if(ch != '[')
+                {
+                    str[curr_char++] = ch;
+                    fio_write(1, &ch, 1);
+                }
+                else
+                {
+                    ch=receive_byte();
+                    if(ch >= '1' && ch <= '6')
+                    {
+                        ch=receive_byte();
+                    }
+                }
+            }
+			else
+            {
+				str[curr_char++] = ch;
+				fio_write(1, &ch, 1);
+			}
+		} while (!done);
+        fio_write(1, newLine, strlen(newLine));
+        if(curr_char>0){
+		/*This is my shell command*/
+		Shell_Command(str);
+	}
+    }
+}
+
 
 int main()
 {
@@ -88,17 +197,16 @@ int main()
 	fs_init();
 	fio_init();
 	
-	register_romfs("romfs", &_sromfs);
-	
 	/* Create the queue used by the serial task.  Messages for write to
 	 * the RS232. */
 	vSemaphoreCreateBinary(serial_tx_wait_sem);
+	serial_rx_queue = xQueueCreate(1, sizeof(char));
 
-	/* Create a task to output text read from romfs. */
-	xTaskCreate(read_romfs_task,
-	            (signed portCHAR *) "Read romfs",
-	            512 /* stack size */, NULL, tskIDLE_PRIORITY + 2, NULL);
-
+	/* Create a task to receive char from the RS232 port. */
+	xTaskCreate(Shell,
+	            (signed portCHAR *) "Shell",
+	            512 /* stack size */, NULL, tskIDLE_PRIORITY + 3, NULL);
+	
 	/* Start running the tasks. */
 	vTaskStartScheduler();
 
