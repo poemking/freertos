@@ -7,10 +7,11 @@
 #include "queue.h"
 #include "semphr.h"
 #include <string.h>
-
+#include <stddef.h>
 /* Filesystem includes */
 #include "filesystem.h"
 #include "fio.h"
+#include "host.h"
 
 #define MAX_SERIAL_STR 100
 extern const char _sromfs;
@@ -85,6 +86,25 @@ char receive_byte()
 	return msg;
 }
 
+void host_command(char *str)
+{
+	char host_tmp[strlen(str)];
+	char i=0;
+	if(strlen(str)==4){
+		Print("Please input: host <command>");
+	}
+	else if(str[4]==' '){
+		for(i=5;i<strlen(str);i++){
+				host_tmp[i-5]=str[i];
+			}
+			host_system(host_tmp, strlen(host_tmp));
+			
+			Print("You have transmitted .");
+	}
+              else{
+		Print("Error!");
+	}
+}
 
 void Shell_Command(char *str)
 {		
@@ -118,6 +138,10 @@ void Shell_Command(char *str)
                 Print("ps -- open your workmanager");
                 Print("help -- display the list");
 	}
+  	else if(!strncmp(str,"host",4)){
+		host_command(str);
+	}
+
 	else{
 		Print("Command not found, please input 'help'");
 	}
@@ -205,7 +229,7 @@ int main()
 	/* Create a task to receive char from the RS232 port. */
 	xTaskCreate(Shell,
 	            (signed portCHAR *) "Shell",
-	            512 /* stack size */, NULL, tskIDLE_PRIORITY + 3, NULL);
+	            512 /* stack size */, NULL, tskIDLE_PRIORITY + 4, NULL);
 	
 	/* Start running the tasks. */
 	vTaskStartScheduler();
