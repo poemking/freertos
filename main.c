@@ -141,7 +141,9 @@ void Shell_Command(char *str)
   	else if(!strncmp(str,"host",4)){
 		host_command(str);
 	}
-
+	else if(!strncmp(str,"mmtest",6)){
+		mmtest_cmd(str);
+	}
 	else{
 		Print("Command not found, please input 'help'");
 	}
